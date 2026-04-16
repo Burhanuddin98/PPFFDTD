@@ -106,7 +106,7 @@ class PFDTDMethod(SimulationMethod):
         # ── Step 1: Build PFFDTD model from Gmsh mesh ──
         model = self._build_model(
             msh_path, geo_path, abs_coeffs, src_xyz, receivers,
-            h, c0, Tc, rh, ir_length, json_path.parent
+            h, c0, Tc, rh, ir_length, fmax, json_path.parent
         )
 
         # ── Step 2: Run PFFDTD ──
@@ -118,7 +118,7 @@ class PFDTDMethod(SimulationMethod):
         print("PFFDTD: simulation done!")
 
     def _build_model(self, msh_path, geo_path, abs_coeffs, src_xyz,
-                     receivers, h, c0, Tc, rh, ir_length, work_dir):
+                     receivers, h, c0, Tc, rh, ir_length, fmax, work_dir):
         """Convert CHORAS inputs to PFFDTD H5 data."""
         import tempfile
         import gmsh
@@ -158,68 +158,84 @@ class PFDTDMethod(SimulationMethod):
         # ── Run PFFDTD setup (voxelizer + signals) ──
         self._run_setup(
             json_model_path, mat_files, save_dir,
-            h, c0, Tc, rh, ir_length
+            h, c0, Tc, rh, ir_length, fmax
         )
 
         return save_dir
 
     def _extract_gmsh_model(self, abs_coeffs):
-        """Extract triangle mesh from Gmsh into PFFDTD-compatible format."""
+        """Extract triangle mesh from Gmsh into PFFDTD-compatible format.
+
+        Returns mats_hash with pts, tris, color, sides per surface.
+        The 'sides' field controls PFFDTD's one-sided boundary model:
+          +1 = front face is lossy (normal pointing inward)
+          -1 = back face is lossy
+           0 = rigid (unmarked)
+        """
         import gmsh
 
-        entities = gmsh.model.getEntities(2)
+        phys_groups = gmsh.model.getPhysicalGroups(2)
         mats_hash = {}
 
-        for dim, tag in entities:
-            # Get physical groups for this entity
-            phys_groups = gmsh.model.getPhysicalGroupsForEntity(dim, tag)
-            if phys_groups:
-                name = gmsh.model.getPhysicalName(dim, phys_groups[0])
-                name = name.split("$")[0]  # strip Gmsh suffixes
-            else:
-                name = f"surface_{tag}"
+        # Default colors for surfaces
+        default_colors = [
+            [180, 180, 180], [200, 100, 100], [100, 200, 100],
+            [100, 100, 200], [200, 200, 100], [200, 100, 200],
+            [100, 200, 200], [150, 150, 150],
+        ]
 
-            # Get triangles
-            elem_types, elem_tags, node_tags = gmsh.model.mesh.getElements(dim, tag)
-            nodes_coords, _, _, _ = gmsh.model.mesh.getNodesByElementType(2, tag)
+        for idx, (dim, phys_tag) in enumerate(phys_groups):
+            name = gmsh.model.getPhysicalName(dim, phys_tag)
+            name = name.split("$")[0]
 
-            # Reshape coordinates
-            coords = nodes_coords.reshape(-1, 3)
+            # Get entities in this physical group
+            entity_tags = gmsh.model.getEntitiesForPhysicalGroup(dim, phys_tag)
 
-            # Get unique nodes and triangles
             all_nodes = {}
             pts = []
             tris = []
-            for et, etags, ntags in zip(elem_types, elem_tags, node_tags):
-                if et != 2:  # triangles only
-                    continue
-                ntags = ntags.reshape(-1, 3)
-                for tri_nodes in ntags:
-                    tri = []
-                    for nid in tri_nodes:
-                        if nid not in all_nodes:
-                            coord = gmsh.model.mesh.getNode(nid)[0]
-                            all_nodes[nid] = len(pts)
-                            pts.append(coord.tolist())
-                        tri.append(all_nodes[nid])
-                    tris.append(tri)
+
+            for entity_tag in entity_tags:
+                elem_types, elem_tags_list, node_tags_list = \
+                    gmsh.model.mesh.getElements(dim, entity_tag)
+
+                for et, ntags in zip(elem_types, node_tags_list):
+                    if et != 2:  # triangles only
+                        continue
+                    ntags = ntags.reshape(-1, 3)
+                    for tri_nodes in ntags:
+                        tri = []
+                        for nid in tri_nodes:
+                            if nid not in all_nodes:
+                                coord, _, _, _ = gmsh.model.mesh.getNode(int(nid))
+                                all_nodes[nid] = len(pts)
+                                pts.append(coord.tolist())
+                            tri.append(all_nodes[nid])
+                        tris.append(tri)
 
             if tris:
-                mats_hash[name] = {"pts": pts, "tris": tris}
+                # Sides: +1 means the front face (outward normal) is the lossy side
+                # For room interiors, normals point inward, so sides = -1
+                n_tris = len(tris)
+                sides = np.ones(n_tris, dtype=int).tolist()  # default: front lossy
+                color = default_colors[idx % len(default_colors)]
+
+                mats_hash[name] = {
+                    "pts": pts,
+                    "tris": tris,
+                    "color": color,
+                    "sides": sides,
+                }
 
         return mats_hash
 
     def _to_pffdtd_json(self, mats_hash, src_xyz, receivers, abs_coeffs):
-        """Build PFFDTD-format JSON model."""
-        # Source and receiver positions as lists
-        sources = [src_xyz.tolist()]
-        recs = [r.tolist() for r in receivers]
+        """Build PFFDTD-format JSON model (matches SketchUp export format)."""
+        sources = [{"xyz": src_xyz.tolist()}]
+        recs = [{"xyz": r.tolist()} for r in receivers]
 
         return {
-            "mats_hash": {
-                name: {"pts": data["pts"], "tris": data["tris"]}
-                for name, data in mats_hash.items()
-            },
+            "mats_hash": mats_hash,
             "sources": sources,
             "receivers": recs,
         }
@@ -270,53 +286,39 @@ class PFDTDMethod(SimulationMethod):
         return out
 
     def _run_setup(self, json_model_path, mat_files, save_dir,
-                   h, c0, Tc, rh, ir_length):
-        """Run PFFDTD voxelizer and signal setup."""
+                   h, c0, Tc, rh, ir_length, fmax):
+        """Run PFFDTD setup via Hamilton's sim_setup() function."""
         import platform
-        from common.room_geo import RoomGeo
-        from fdtd.sim_consts import SimConsts
-        from fdtd.sim_comms import SimComms
-        from fdtd.sim_mats import SimMats
-        from voxelizer.cart_grid import CartGrid
-        from voxelizer.vox_grid import VoxGrid
-        from voxelizer.vox_scene import VoxScene
+        from sim_setup import sim_setup
 
-        # Fix Windows multiprocessing
-        if platform.system() == 'Windows':
-            Nprocs = 1
-        else:
-            Nprocs = os.cpu_count() or 1
+        # Build mat_files_dict: {surface_name: filename.h5}
+        mat_files_dict = {}
+        for name, path in mat_files.items():
+            mat_files_dict[name] = os.path.basename(path)
 
-        # 1. Room geometry
-        room_geo = RoomGeo(str(json_model_path))
-
-        # 2. Simulation constants
-        fmax = c0 / (2 * h)  # Nyquist from grid
-        sim_consts = SimConsts(c0, Tc, rh, fmax, ppw=round(c0 / (fmax * h)))
-        sim_consts.save(str(save_dir))
-
-        # 3. Materials
         mat_folder = str(save_dir / "materials")
-        mat_list = list(mat_files.keys())
-        sim_mats = SimMats(mat_folder, mat_list)
-        sim_mats.save(str(save_dir))
+        PPW = round(c0 / (fmax * h))
 
-        # 4. Cartesian grid
-        cart_grid = CartGrid(room_geo, sim_consts)
-        cart_grid.save(str(save_dir))
+        Nprocs = 1 if platform.system() == 'Windows' else None
 
-        # 5. Communications (sources, receivers, signals)
-        Nt = int(np.ceil(ir_length / sim_consts.Ts))
-        sim_comms = SimComms(room_geo, cart_grid, sim_consts, Nt=Nt)
-        sim_comms.save(str(save_dir))
-
-        # 6. Voxelize
-        vox_grid = VoxGrid(room_geo, cart_grid)
-        vox_grid.fill(Nprocs=Nprocs)
-
-        vox_scene = VoxScene(room_geo, cart_grid, vox_grid, sim_mats)
-        vox_scene.calc_adj(Nprocs=Nprocs)
-        vox_scene.save(str(save_dir))
+        sim_setup(
+            model_json_file=str(json_model_path),
+            mat_folder=mat_folder,
+            mat_files_dict=mat_files_dict,
+            source_num=1,
+            insig_type='impulse',
+            diff_source=False,
+            duration=ir_length,
+            Tc=Tc,
+            rh=rh,
+            fcc_flag=False,
+            PPW=PPW,
+            fmax=fmax,
+            save_folder=str(save_dir),
+            compress=0,
+            draw_vox=False,
+            Nprocs=Nprocs,
+        )
 
         print(f"PFFDTD setup complete: {save_dir}")
 
@@ -352,7 +354,6 @@ class PFDTDMethod(SimulationMethod):
         from fdtd.process_outputs import ProcessOutputs
 
         po = ProcessOutputs(str(save_dir))
-        po.load_h5_data()
         po.initial_process(fcut=10.0, N_order=4)
 
         # Low-pass at grid Nyquist (remove numerical dispersion)
@@ -362,15 +363,13 @@ class PFDTDMethod(SimulationMethod):
         # Resample to 48 kHz
         po.resample(Fs_f=48000)
 
-        # Return IRs as list of numpy arrays
-        Nr = po.r_out_f.shape[0] if po.r_out_f.ndim > 1 else 1
-        irs = []
-        if Nr > 1:
-            for r in range(Nr):
-                irs.append(po.r_out_f[r].tolist())
+        # Return IRs as list of lists (one per receiver)
+        r_out = po.r_out_f
+        if r_out.ndim == 1:
+            irs = [r_out.tolist()]
         else:
-            irs.append(po.r_out_f.tolist())
-
+            irs = [r_out[r].tolist() for r in range(r_out.shape[0])]
+        print(f"PFFDTD post: {len(irs)} IRs, {len(irs[0])} samples each")
         return irs
 
     def _write_results(self, config, irs, json_file_path):
