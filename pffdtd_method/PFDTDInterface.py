@@ -498,27 +498,57 @@ class PFDTDMethod(SimulationMethod):
     def _run_rom(self, rom_path, abs_coeffs):
         """Evaluate trained ROM with new material parameters."""
         from scipy.interpolate import RBFInterpolator
+        import h5py
 
         d = np.load(str(rom_path))
         ir_mean = d['ir_mean']
         Phi = d['Phi']
         training_params = d['training_params']
         training_coeffs = d['training_coeffs']
+        fs_native = float(d['fs'])
         r = Phi.shape[1]
 
         # Build RBF interpolation
         log_params = np.log(training_params)
+        # Current materials = baseline (all 1.0)
+        query = np.zeros((1, training_params.shape[1]))
+
         predicted_coeffs = np.zeros(r)
         for j in range(r):
             rbf = RBFInterpolator(log_params, training_coeffs[:, j],
                                   kernel='thin_plate_spline', smoothing=0.0)
-            # Current materials = baseline (all 1.0)
-            query = np.zeros((1, training_params.shape[1]))
             predicted_coeffs[j] = rbf(query)[0]
 
-        ir = ir_mean + Phi @ predicted_coeffs
-        print(f"ROM: {len(ir)} samples, r={r}")
-        return [ir.tolist()]
+        ir_raw = ir_mean + Phi @ predicted_coeffs
+
+        # Post-process: HP filter + LP filter + resample to 48kHz
+        from scipy.signal import butter, sosfiltfilt
+
+        # High-pass at 10 Hz
+        sos_hp = butter(4, 10.0, btype='high', fs=fs_native, output='sos')
+        ir_filt = sosfiltfilt(sos_hp, ir_raw)
+
+        # Low-pass at 0.9 * fmax
+        save_dir = rom_path.parent
+        with h5py.File(str(save_dir / 'sim_consts.h5'), 'r') as f:
+            c = float(f['c'][()])
+            h = float(f['h'][()])
+        fmax = c / (2 * h)
+        fcut = min(0.9 * fmax, 0.45 * fs_native)
+        sos_lp = butter(8, fcut, btype='low', fs=fs_native, output='sos')
+        ir_filt = sosfiltfilt(sos_lp, ir_filt)
+
+        # Resample to 48 kHz
+        try:
+            import resampy
+            ir_48k = resampy.resample(ir_filt, fs_native, 48000)
+        except ImportError:
+            from scipy.signal import resample
+            n_out = int(len(ir_filt) * 48000 / fs_native)
+            ir_48k = resample(ir_filt, n_out)
+
+        print(f"ROM: {len(ir_raw)} -> {len(ir_48k)} samples (48kHz), r={r}")
+        return [ir_48k.tolist()]
 
     def _write_results(self, config, irs, json_file_path):
         """Write impulse responses back to CHORAS JSON."""
