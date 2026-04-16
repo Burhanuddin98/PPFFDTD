@@ -1,40 +1,47 @@
 """
-3D FDTD visualization: black background, white wireframe, neon waves.
+3D FDTD visualization: black bg, white wireframe, transparent neon waves.
 
-Uses matplotlib 3D to render three translucent pressure slices
-inside a white wireframe room with source/receiver markers.
+Only high-pressure regions glow. Near-zero pressure = fully transparent.
+Uses the actual CHORAS MeasurementRoom non-rectangular geometry.
 """
 import sys, os
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from pathlib import Path
 import h5py
 import time as _time
 
 sys.path.insert(0, 'pffdtd/python')
-
 plt.style.use('dark_background')
 
-# Neon colormap: cyan → transparent → magenta
-neon_cmap = LinearSegmentedColormap.from_list('neon_wave', [
-    (0.00, '#00DDFF'),
-    (0.35, '#001133'),
-    (0.50, '#00000000'),
-    (0.65, '#330011'),
-    (1.00, '#FF00DD'),
+# Neon colormap
+neon_cmap = LinearSegmentedColormap.from_list('neon', [
+    (0.00, '#00EEFF'),
+    (0.30, '#003366'),
+    (0.50, '#000000'),
+    (0.70, '#660033'),
+    (1.00, '#FF00FF'),
 ])
 
 DATA_DIR = Path('common/pffdtd_data')
 OUT_DIR = Path('vis3d')
 OUT_DIR.mkdir(exist_ok=True)
 
-# ---- Load grid info ----
+# ---- Room geometry (actual vertices from .geo file) ----
+# Non-rectangular floor plan
+floor_pts = np.array([
+    [0.0, 5.1],   # P1
+    [6.21, 4.0],  # P2
+    [5.52, 0.0],  # P3
+    [0.0, 0.0],   # P4
+])
+z_floor, z_ceil = 0.0, 3.3
+
+# ---- Load grid ----
 with h5py.File(DATA_DIR / 'vox_out.h5', 'r') as f:
     Nx, Ny, Nz = int(f['Nx'][()]), int(f['Ny'][()]), int(f['Nz'][()])
     xv, yv, zv = f['xv'][()], f['yv'][()], f['zv'][()]
-    bn_ixyz = f['bn_ixyz'][...]
 
 with h5py.File(DATA_DIR / 'comms_out.h5', 'r') as f:
     in_ixyz = f['in_ixyz'][...]
@@ -42,7 +49,6 @@ with h5py.File(DATA_DIR / 'comms_out.h5', 'r') as f:
 
 with h5py.File(DATA_DIR / 'sim_consts.h5', 'r') as f:
     Ts = float(f['Ts'][()])
-    h_grid = float(f['h'][()])
 
 NyNz = Ny * Nz
 src = in_ixyz[0]
@@ -50,19 +56,14 @@ sx, sy, sz = src // NyNz, (src % NyNz) // Nz, src % Nz
 rec = out_ixyz[0]
 rx, ry, rz = rec // NyNz, (rec % NyNz) // Nz, rec % Nz
 
-bn_mask = np.zeros(Nx * Ny * Nz, dtype=bool)
-bn_mask[bn_ixyz] = True
+bn_mask = np.zeros(Nx*Ny*Nz, dtype=bool)
+with h5py.File(DATA_DIR / 'vox_out.h5', 'r') as f:
+    bn_mask[f['bn_ixyz'][...]] = True
 bn_mask_3d = bn_mask.reshape(Nx, Ny, Nz)
 
-# Room bounds (from boundary outline)
-x0, x1 = xv[2], xv[-3]
-y0, y1 = yv[2], yv[-3]
-z0, z1 = zv[2], zv[-3]
+print(f"Grid: {Nx}x{Ny}x{Nz}, Source: ({xv[sx]:.1f},{yv[sy]:.1f},{zv[sz]:.1f})")
 
-print(f"Grid: {Nx}x{Ny}x{Nz}")
-print(f"Room: [{x0:.1f},{x1:.1f}] x [{y0:.1f},{y1:.1f}] x [{z0:.1f},{z1:.1f}]")
-
-# ---- Run FDTD with slice collection ----
+# ---- Run FDTD ----
 print("Running FDTD...")
 from fdtd.sim_fdtd import SimEngine
 from fdtd.sim_fdtd import (nb_flip_halos, nb_stencil_air_cart,
@@ -75,22 +76,15 @@ engine.setup_mask()
 engine.allocate_mem()
 engine.set_coeffs()
 engine.checks()
-
 Nt = engine.Nt
 
-# Snapshot schedule: dense early, sparse late
-snap_steps = list(range(2, 300, 3))
-snap_steps += list(range(300, 1000, 20))
-snap_steps += list(range(1000, Nt, 150))
+snap_steps = list(range(2, 200, 2)) + list(range(200, 800, 10)) + list(range(800, Nt, 100))
 snap_steps = sorted(set(s for s in snap_steps if s < Nt))
 snap_set = set(snap_steps)
 
-slices_xy = []
-slices_xz = []
-slices_yz = []
-snap_times = []
-
+slices_xy, slices_xz, slices_yz, snap_times = [], [], [], []
 t0 = _time.perf_counter()
+
 for n in range(Nt):
     nb_save_bn(engine.u0, engine.u2ba, engine.bna_ixyz)
     nb_flip_halos(engine.u1)
@@ -120,27 +114,54 @@ for n in range(Nt):
 
 print(f"FDTD: {_time.perf_counter()-t0:.0f}s, {len(slices_xy)} snapshots")
 
-# ---- Render 3D frames ----
-# Pick ~30 frames for GIF
-n_frames = min(40, len(slices_xy))
+# ---- Pick frames ----
+# Global vmax from ~10ms (after spike, wavefront is dominant feature)
+# Early spike saturates, wavefront rings glow bright, late field fades to black
+si_ref = min(30, len(slices_xy)-1)  # ~30th dense snapshot = ~6ms
+global_vmax = max(np.max(np.abs(slices_xy[si_ref])),
+                  np.max(np.abs(slices_xz[si_ref])),
+                  np.max(np.abs(slices_yz[si_ref])), 1e-10)
+# Clamp: don't let it be too small (ensures late field fades out properly)
+global_vmax = max(global_vmax, 0.01)
+print(f"Global vmax: {global_vmax:.4e} (fixed for all frames)")
+
+n_frames = 45
 picks = np.unique(np.linspace(0, len(slices_xy)-1, n_frames).astype(int))
+print(f"Rendering {len(picks)} frames...")
 
-print(f"Rendering {len(picks)} 3D frames...")
+
+def draw_room_wireframe(ax):
+    """Draw the actual non-rectangular room wireframe in white."""
+    # Bottom edges
+    for i in range(len(floor_pts)):
+        j = (i + 1) % len(floor_pts)
+        ax.plot3D([floor_pts[i,0], floor_pts[j,0]],
+                  [floor_pts[i,1], floor_pts[j,1]],
+                  [z_floor, z_floor], color='white', lw=1.0, alpha=0.7)
+    # Top edges
+    for i in range(len(floor_pts)):
+        j = (i + 1) % len(floor_pts)
+        ax.plot3D([floor_pts[i,0], floor_pts[j,0]],
+                  [floor_pts[i,1], floor_pts[j,1]],
+                  [z_ceil, z_ceil], color='white', lw=1.0, alpha=0.7)
+    # Verticals
+    for pt in floor_pts:
+        ax.plot3D([pt[0], pt[0]], [pt[1], pt[1]],
+                  [z_floor, z_ceil], color='white', lw=1.0, alpha=0.7)
 
 
-def draw_wireframe(ax):
-    """Draw white wireframe room edges."""
-    verts = [
-        [x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0],
-        [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1],
-    ]
-    edges = [
-        [0,1],[1,2],[2,3],[3,0],  # bottom
-        [4,5],[5,6],[6,7],[7,4],  # top
-        [0,4],[1,5],[2,6],[3,7],  # verticals
-    ]
-    for i, j in edges:
-        ax.plot3D(*zip(verts[i], verts[j]), color='white', linewidth=0.7, alpha=0.5)
+def pressure_to_rgba(data, vmax, threshold=0.02):
+    """Convert pressure to RGBA. Below threshold = fully transparent."""
+    norm = data / vmax  # [-1, 1]
+    colors = neon_cmap((norm + 1) / 2)
+
+    # Alpha: zero below threshold, ramps up with sqrt for brightness
+    intensity = np.abs(norm)
+    alpha = np.where(intensity < threshold, 0.0,
+                     np.sqrt((intensity - threshold) / (1 - threshold)))
+    alpha = np.clip(alpha, 0.0, 0.9)
+    colors[:, :, 3] = alpha
+    return colors
 
 
 for fi, si in enumerate(picks):
@@ -149,95 +170,82 @@ for fi, si in enumerate(picks):
     yz = slices_yz[si]
     t_ms = snap_times[si]
 
-    vmax = max(np.max(np.abs(xy)), np.max(np.abs(xz)),
-               np.max(np.abs(yz)), 1e-10)
+    vmax = global_vmax  # fixed — field fades to transparent as energy decays
 
-    fig = plt.figure(figsize=(12, 9), facecolor='black')
+    fig = plt.figure(figsize=(11, 9), facecolor='black')
     ax = fig.add_subplot(111, projection='3d', facecolor='black')
-    ax.set_facecolor('black')
 
-    # Wireframe room
-    draw_wireframe(ax)
+    draw_room_wireframe(ax)
 
-    # XY slice (horizontal at source height)
-    X_xy, Y_xy = np.meshgrid(xv, yv, indexing='ij')
-    Z_xy = np.full_like(X_xy, zv[sz])
-    colors_xy = neon_cmap((xy / vmax + 1) / 2)
-    colors_xy[:, :, 3] = np.clip(np.abs(xy) / vmax * 2, 0.05, 0.8)
-    ax.plot_surface(X_xy, Y_xy, Z_xy, facecolors=colors_xy,
+    # XY horizontal slice
+    X, Y = np.meshgrid(xv, yv, indexing='ij')
+    Z_h = np.full_like(X, zv[sz])
+    ax.plot_surface(X, Y, Z_h, facecolors=pressure_to_rgba(xy, vmax),
                     shade=False, rstride=1, cstride=1, antialiased=False)
 
-    # XZ slice (vertical at source Y)
-    X_xz, Z_xz = np.meshgrid(xv, zv, indexing='ij')
-    Y_xz = np.full_like(X_xz, yv[sy])
-    colors_xz = neon_cmap((xz / vmax + 1) / 2)
-    colors_xz[:, :, 3] = np.clip(np.abs(xz) / vmax * 2, 0.05, 0.8)
-    ax.plot_surface(X_xz, Y_xz, Z_xz, facecolors=colors_xz,
+    # XZ vertical slice
+    X2, Z2 = np.meshgrid(xv, zv, indexing='ij')
+    Y_v = np.full_like(X2, yv[sy])
+    ax.plot_surface(X2, Y_v, Z2, facecolors=pressure_to_rgba(xz, vmax),
                     shade=False, rstride=1, cstride=1, antialiased=False)
 
-    # YZ slice (vertical at source X)
-    Y_yz, Z_yz = np.meshgrid(yv, zv, indexing='ij')
-    X_yz = np.full_like(Y_yz, xv[sx])
-    colors_yz = neon_cmap((yz / vmax + 1) / 2)
-    colors_yz[:, :, 3] = np.clip(np.abs(yz) / vmax * 2, 0.05, 0.8)
-    ax.plot_surface(X_yz, Y_yz, Z_yz, facecolors=colors_yz,
+    # YZ vertical slice
+    Y3, Z3 = np.meshgrid(yv, zv, indexing='ij')
+    X_v = np.full_like(Y3, xv[sx])
+    ax.plot_surface(X_v, Y3, Z3, facecolors=pressure_to_rgba(yz, vmax),
                     shade=False, rstride=1, cstride=1, antialiased=False)
 
-    # Source marker
-    ax.scatter([xv[sx]], [yv[sy]], [zv[sz]], color='#FF2222',
-               s=120, marker='*', edgecolors='white', linewidth=0.5,
+    # Source (red star)
+    ax.scatter([xv[sx]], [yv[sy]], [zv[sz]], color='#FF2222', s=150,
+               marker='*', edgecolors='white', linewidth=0.5,
                zorder=10, depthshade=False)
-    # Receiver marker
-    ax.scatter([xv[rx]], [yv[ry]], [zv[rz]], color='#22FF22',
-               s=80, marker='^', edgecolors='white', linewidth=0.5,
+    # Receiver (green triangle)
+    ax.scatter([xv[rx]], [yv[ry]], [zv[rz]], color='#22FF22', s=100,
+               marker='^', edgecolors='white', linewidth=0.5,
                zorder=10, depthshade=False)
 
-    # Styling
-    ax.set_xlim(x0 - 0.3, x1 + 0.3)
-    ax.set_ylim(y0 - 0.3, y1 + 0.3)
-    ax.set_zlim(z0 - 0.1, z1 + 0.3)
-    ax.set_xlabel('x (m)', color='#555555', fontsize=8, labelpad=-2)
-    ax.set_ylabel('y (m)', color='#555555', fontsize=8, labelpad=-2)
-    ax.set_zlabel('z (m)', color='#555555', fontsize=8, labelpad=-2)
-    ax.tick_params(colors='#333333', labelsize=6)
+    # Clean axes
+    pad = 0.5
+    ax.set_xlim(-pad, 6.5 + pad)
+    ax.set_ylim(-pad, 5.5 + pad)
+    ax.set_zlim(-0.2, 3.6)
+    ax.set_xlabel('x', color='#444444', fontsize=7, labelpad=-4)
+    ax.set_ylabel('y', color='#444444', fontsize=7, labelpad=-4)
+    ax.set_zlabel('z', color='#444444', fontsize=7, labelpad=-4)
+    ax.tick_params(colors='#222222', labelsize=5, pad=-2)
     ax.xaxis.pane.fill = False
     ax.yaxis.pane.fill = False
     ax.zaxis.pane.fill = False
-    ax.xaxis.pane.set_edgecolor('#222222')
-    ax.yaxis.pane.set_edgecolor('#222222')
-    ax.zaxis.pane.set_edgecolor('#222222')
+    ax.xaxis.pane.set_edgecolor('#1a1a1a')
+    ax.yaxis.pane.set_edgecolor('#1a1a1a')
+    ax.zaxis.pane.set_edgecolor('#1a1a1a')
     ax.grid(False)
 
-    # Camera angle (slow rotation)
-    elev = 25
-    azim = -55 + fi * 0.8
-    ax.view_init(elev=elev, azim=azim)
+    # Slow rotation
+    ax.view_init(elev=22, azim=-52 + fi * 0.7)
 
     # Title
-    fig.text(0.5, 0.95, f'PPFFDTD   t = {t_ms:.1f} ms',
-             color='white', fontsize=16, fontweight='bold',
-             ha='center', va='top', fontfamily='monospace')
-    fig.text(0.5, 0.03, 'BRAS S09 Seminar Room',
-             color='#666666', fontsize=10, ha='center',
-             fontfamily='monospace')
+    fig.text(0.5, 0.96, f'PPFFDTD    t = {t_ms:.1f} ms',
+             color='white', fontsize=15, fontweight='bold',
+             ha='center', fontfamily='Segoe UI')
 
     path = OUT_DIR / f'frame_{fi:03d}.png'
-    fig.savefig(path, dpi=120, facecolor='black',
-                bbox_inches='tight', pad_inches=0.1)
+    fig.savefig(path, dpi=130, facecolor='black',
+                bbox_inches='tight', pad_inches=0.05)
     plt.close()
 
     if (fi + 1) % 10 == 0 or fi == 0:
-        print(f"  [{fi+1}/{len(picks)}] t={t_ms:.1f}ms")
+        print(f"  [{fi+1}/{len(picks)}] t={t_ms:.1f}ms, peak={vmax:.2e}")
 
 # GIF
 try:
     from PIL import Image
     frames = [Image.open(OUT_DIR / f'frame_{fi:03d}.png') for fi in range(len(picks))]
-    gif_path = OUT_DIR / 'ppffdtd_3d.gif'
-    frames[0].save(gif_path, save_all=True, append_images=frames[1:],
-                   duration=180, loop=0, optimize=True)
-    print(f"\nGIF: {gif_path} ({os.path.getsize(gif_path)/1e6:.1f} MB)")
+    gif = OUT_DIR / 'ppffdtd_3d.gif'
+    frames[0].save(gif, save_all=True, append_images=frames[1:],
+                   duration=150, loop=0, optimize=True)
+    print(f"\nGIF: {gif} ({os.path.getsize(gif)/1e6:.1f} MB)")
 except ImportError:
-    print("Install Pillow for GIF")
+    pass
 
 print("Done!")

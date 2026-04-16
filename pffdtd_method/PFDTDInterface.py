@@ -315,7 +315,7 @@ class PFDTDMethod(SimulationMethod):
             mat_folder=mat_folder,
             mat_files_dict=mat_files_dict,
             source_num=1,
-            insig_type='impulse',
+            insig_type='dhann30',
             diff_source=False,
             duration=ir_length,
             Tc=Tc,
