@@ -138,8 +138,6 @@ Three modes:
 | Leave-one-out (33 training points) | 0.9997 mean | 2.4% mean |
 | 5 unseen FDTD runs | 0.9998 mean | 1.0% mean |
 
-![FDTD Wavefront](docs/fdtd_wavefront.png)
-
 ## Repository structure
 
 ```
@@ -159,7 +157,7 @@ ppffdtd/
 ├── docs/
 │   ├── algorithm.md            PFFDTD algorithm specification
 │   ├── rom_dashboard.png
-│   └── fdtd_wavefront.png
+│   └── ppffdtd_3d.gif
 ├── visualize_3d.py             3D pressure field visualization
 ├── visualize_rom.py            ROM dashboard generation
 └── run_rom_validation.py       ROM training + unseen-point validation
