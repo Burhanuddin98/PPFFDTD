@@ -1,0 +1,40 @@
+{
+    "absorption_coefficients": {
+        "floor": "0.03, 0.04, 0.05, 0.05, 0.05",
+        "ceiling": "0.10, 0.10, 0.08, 0.06, 0.06",
+        "wall1": "0.02, 0.02, 0.03, 0.04, 0.05",
+        "wall2": "0.02, 0.02, 0.03, 0.04, 0.05",
+        "wall3": "0.02, 0.02, 0.03, 0.04, 0.05",
+        "wall4": "0.02, 0.02, 0.03, 0.04, 0.05"
+    },
+    "msh_path": "MeasurementRoom.msh",
+    "geo_path": "MeasurementRoom.geo",
+    "results": [
+        {
+            "percentage": 0,
+            "sourceX": 2.0,
+            "sourceY": 3.0,
+            "sourceZ": 1.5,
+            "resultType": "PFFDTD",
+            "frequencies": [125, 250, 500, 1000, 2000],
+            "responses": [
+                {
+                    "x": 5.0,
+                    "y": 2.0,
+                    "z": 1.2,
+                    "receiverResults": [],
+                    "receiverResultsUncorrected": []
+                }
+            ]
+        }
+    ],
+    "simulationSettings": {
+        "pffdtd_c0": 343,
+        "pffdtd_fmax": 1000,
+        "pffdtd_ppw": 6,
+        "pffdtd_ir_length": 1.0,
+        "pffdtd_temperature": 20.0,
+        "pffdtd_humidity": 50.0
+    },
+    "settingsPreset": "Advanced"
+}
