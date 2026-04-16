@@ -4,11 +4,13 @@ Python wrapper for [PFFDTD](https://github.com/bsxfun/pffdtd) (Brian Hamilton, M
 
 Linked project: [romacoustics](https://github.com/Burhanuddin98/Reduced-Order-Modelling-SL) (Laplace-domain ROM for room acoustics)
 
-![ROM Dashboard](docs/rom_dashboard.png)
+![FDTD Simulation](docs/ppffdtd_3d.gif)
 
 ## What it does
 
 Takes a room geometry (.geo/.msh) and surface absorption coefficients, runs a finite-difference time-domain (FDTD) wave simulation, and returns an impulse response with ISO 3382 metrics. An optional reduced order model provides instant re-evaluation when materials change.
+
+![ROM Dashboard](docs/rom_dashboard.png)
 
 ## Architecture
 
