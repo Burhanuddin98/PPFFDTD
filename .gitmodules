@@ -1,0 +1,3 @@
+[submodule "pffdtd"]
+	path = pffdtd
+	url = https://github.com/bsxfun/pffdtd.git
