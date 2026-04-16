@@ -47,13 +47,12 @@ class PFDTDMethod(SimulationMethod):
     def run_simulation(self, json_file_path: str):
         """Run PFFDTD simulation from CHORAS JSON.
 
+        Pipeline:
         1. Parse JSON (geometry, materials, source/receiver positions)
-        2. Mesh with Gmsh → export triangles
-        3. Voxelize for FDTD
-        4. Fit absorption → DEF triplets
-        5. Run PFFDTD engine
-        6. Post-process (filter, resample)
-        7. Write IR back to JSON
+        2. Check if trained ROM exists → use it (instant)
+        3. Otherwise: mesh → voxelize → FDTD (GPU/CPU) → post-process
+        4. Optionally train ROM for future fast evaluations
+        5. Write IR back to JSON
         """
         print("PFFDTD: starting simulation")
         json_path = Path(json_file_path)
@@ -65,27 +64,26 @@ class PFDTDMethod(SimulationMethod):
         settings = config.get("simulationSettings", {})
         c0 = settings.get("pffdtd_c0", 343.0)
         fmax = settings.get("pffdtd_fmax", 1000.0)
-        ppw = settings.get("pffdtd_ppw", 6)  # points per wavelength
-        ir_length = settings.get("pffdtd_ir_length", 1.0)  # seconds
+        ppw = settings.get("pffdtd_ppw", 6)
+        ir_length = settings.get("pffdtd_ir_length", 1.0)
         Tc = settings.get("pffdtd_temperature", 20.0)
         rh = settings.get("pffdtd_humidity", 50.0)
+        use_gpu = settings.get("pffdtd_use_gpu", True)
+        use_rom = settings.get("pffdtd_use_rom", False)
+        train_rom = settings.get("pffdtd_train_rom", False)
 
-        # Grid spacing from PPW and fmax
         h = c0 / (fmax * ppw)
 
         # ── Geometry ──
         geo_path = config.get("geo_path", "")
         msh_path = config.get("msh_path", "")
-
         if not os.path.isabs(msh_path):
             msh_path = str(json_path.parent / msh_path)
         if not os.path.isabs(geo_path):
             geo_path = str(json_path.parent / geo_path)
 
-        # ── Materials (absorption per surface) ──
+        # ── Materials ──
         abs_coeffs = config.get("absorption_coefficients", {})
-        # CHORAS format: {"floor": "0.6, 0.69, 0.71, 0.7, 0.63", ...}
-        # 5 values = octave bands [125, 250, 500, 1000, 2000] Hz
 
         # ── Source / receivers ──
         result_block = config["results"][0]
@@ -99,22 +97,33 @@ class PFDTDMethod(SimulationMethod):
             receivers.append(np.array([resp["x"], resp["y"], resp["z"]]))
 
         print(f"PFFDTD: c0={c0}, fmax={fmax}, h={h:.4f}m, "
-              f"IR={ir_length}s, src={src_xyz}")
+              f"IR={ir_length}s, GPU={use_gpu}, ROM={use_rom}")
         print(f"PFFDTD: {len(abs_coeffs)} surfaces, "
               f"{len(receivers)} receivers")
 
-        # ── Step 1: Build PFFDTD model from Gmsh mesh ──
+        # ── Try ROM first ──
+        rom_path = json_path.parent / "pffdtd_data" / "rom_trained.npz"
+        if use_rom and rom_path.exists():
+            print("PFFDTD: using trained ROM (instant evaluation)")
+            irs = self._run_rom(rom_path, abs_coeffs)
+            self._write_results(config, irs, json_file_path)
+            print("PFFDTD: ROM evaluation done!")
+            return
+
+        # ── Full FDTD pipeline ──
         model = self._build_model(
             msh_path, geo_path, abs_coeffs, src_xyz, receivers,
             h, c0, Tc, rh, ir_length, fmax, json_path.parent
         )
+        irs = self._run_fdtd(model, use_gpu=use_gpu)
 
-        # ── Step 2: Run PFFDTD ──
-        irs = self._run_fdtd(model)
+        # ── Train ROM if requested ──
+        if train_rom:
+            print("PFFDTD: training ROM...")
+            self._train_rom(model, abs_coeffs, rom_path, use_gpu)
 
-        # ── Step 3: Write results back to JSON ──
+        # ── Write results ──
         self._write_results(config, irs, json_file_path)
-
         print("PFFDTD: simulation done!")
 
     def _build_model(self, msh_path, geo_path, abs_coeffs, src_xyz,
@@ -322,8 +331,8 @@ class PFDTDMethod(SimulationMethod):
 
         print(f"PFFDTD setup complete: {save_dir}")
 
-    def _run_fdtd(self, save_dir):
-        """Run PFFDTD simulation engine."""
+    def _run_fdtd(self, save_dir, use_gpu=True):
+        """Run PFFDTD simulation engine (GPU with CPU fallback)."""
         from fdtd.sim_fdtd import SimEngine
 
         engine = SimEngine(str(save_dir), energy_on=False)
@@ -333,13 +342,26 @@ class PFDTDMethod(SimulationMethod):
         engine.set_coeffs()
         engine.checks()
 
-        # Try GPU first, fall back to CPU
-        try:
-            sys.path.insert(0, str(Path(__file__).parent.parent / "ppffdtd"))
-            from gpu_engine import run_gpu
-            print("PFFDTD: using GPU engine")
-            run_gpu(engine)
-        except (ImportError, RuntimeError):
+        gpu_ok = False
+        if use_gpu:
+            try:
+                # Our CuPy RawKernel GPU engine
+                ppffdtd_dir = str(Path(__file__).parent.parent / "ppffdtd")
+                if ppffdtd_dir not in sys.path:
+                    sys.path.insert(0, ppffdtd_dir)
+                from gpu_engine import run_gpu, HAS_GPU
+                if HAS_GPU:
+                    print("PFFDTD: using GPU engine (CuPy RawKernel)")
+                    run_gpu(engine)
+                    gpu_ok = True
+                else:
+                    print("PFFDTD: CuPy available but no GPU detected")
+            except ImportError as e:
+                print(f"PFFDTD: GPU not available ({e})")
+            except Exception as e:
+                print(f"PFFDTD: GPU failed ({e}), falling back to CPU")
+
+        if not gpu_ok:
             print("PFFDTD: using CPU engine (numba)")
             engine.run_all()
 
@@ -371,6 +393,132 @@ class PFDTDMethod(SimulationMethod):
             irs = [r_out[r].tolist() for r in range(r_out.shape[0])]
         print(f"PFFDTD post: {len(irs)} IRs, {len(irs[0])} samples each")
         return irs
+
+    # ── ROM methods ──
+
+    def _train_rom(self, save_dir, abs_coeffs_baseline, rom_path, use_gpu):
+        """Train non-intrusive ROM: run FDTD with perturbed materials.
+
+        Runs 13 FDTD simulations (baseline + 6 materials × 2 perturbations),
+        builds POD + RBF interpolation, saves to disk.
+        """
+        from fdtd.sim_fdtd import SimEngine
+        import h5py
+        from scipy.interpolate import RBFInterpolator
+
+        scales_list = [0.5, 2.0]
+        Nmat = len(abs_coeffs_baseline)
+        mat_names = sorted(abs_coeffs_baseline.keys())
+
+        # Load baseline DEF
+        with h5py.File(str(save_dir / 'sim_mats.h5'), 'r') as f:
+            Mb = f['Mb'][...]
+            DEF_base = np.zeros((int(f['Nmat'][()]), 12, 3))
+            for i in range(int(f['Nmat'][()])):
+                ds = f[f'mat_{i:02d}_DEF'][...]
+                DEF_base[i, :Mb[i]] = ds
+
+        configs = []
+        param_vectors = []
+
+        # Baseline
+        configs.append(('baseline', DEF_base.copy()))
+        param_vectors.append(np.ones(Nmat))
+
+        # Perturbations
+        for mat_idx in range(Nmat):
+            for scale in scales_list:
+                DEF = DEF_base.copy()
+                DEF[mat_idx, :, 1] *= scale  # scale E coefficient
+                label = f'mat{mat_idx}_E*{scale}'
+                configs.append((label, DEF))
+                p = np.ones(Nmat)
+                p[mat_idx] = scale
+                param_vectors.append(p)
+
+        n_train = len(configs)
+        print(f"ROM training: {n_train} FDTD runs")
+
+        # Run all training cases
+        irs = []
+        for i, (label, DEF) in enumerate(configs):
+            print(f"  [{i+1}/{n_train}] {label}...", end=" ", flush=True)
+
+            engine = SimEngine(str(save_dir), energy_on=False)
+            engine.load_h5_data()
+            engine.DEF = DEF  # override materials
+            engine.setup_mask()
+            engine.allocate_mem()
+            engine.set_coeffs()
+            engine.checks()
+
+            if use_gpu:
+                try:
+                    ppffdtd_dir = str(Path(__file__).parent.parent / "ppffdtd")
+                    if ppffdtd_dir not in sys.path:
+                        sys.path.insert(0, ppffdtd_dir)
+                    from gpu_engine import run_gpu, HAS_GPU
+                    if HAS_GPU:
+                        run_gpu(engine)
+                    else:
+                        engine.run_all()
+                except Exception:
+                    engine.run_all()
+            else:
+                engine.run_all()
+
+            ir = engine.u_out[engine.out_reorder[0], :]
+            irs.append(ir)
+            print("done")
+
+        training_irs = np.array(irs)
+        training_params = np.array(param_vectors)
+
+        # POD
+        X = training_irs.T  # (Nt, n_train)
+        ir_mean = np.mean(X, axis=1)
+        X_c = X - ir_mean[:, None]
+        U, S, Vt = np.linalg.svd(X_c, full_matrices=False)
+        energy = np.cumsum(S**2) / np.sum(S**2)
+        r = min(np.searchsorted(energy, 0.9999) + 1, len(S))
+        Phi = U[:, :r]
+        coeffs = X_c.T @ Phi  # (n_train, r)
+
+        print(f"ROM: r={r} basis vectors, energy={energy[r-1]*100:.4f}%")
+
+        # Save
+        np.savez_compressed(str(rom_path),
+                            ir_mean=ir_mean, Phi=Phi,
+                            training_params=training_params,
+                            training_coeffs=coeffs,
+                            training_irs=training_irs,
+                            fs=1.0 / engine.Ts)
+        print(f"ROM saved: {rom_path}")
+
+    def _run_rom(self, rom_path, abs_coeffs):
+        """Evaluate trained ROM with new material parameters."""
+        from scipy.interpolate import RBFInterpolator
+
+        d = np.load(str(rom_path))
+        ir_mean = d['ir_mean']
+        Phi = d['Phi']
+        training_params = d['training_params']
+        training_coeffs = d['training_coeffs']
+        r = Phi.shape[1]
+
+        # Build RBF interpolation
+        log_params = np.log(training_params)
+        predicted_coeffs = np.zeros(r)
+        for j in range(r):
+            rbf = RBFInterpolator(log_params, training_coeffs[:, j],
+                                  kernel='thin_plate_spline', smoothing=0.0)
+            # Current materials = baseline (all 1.0)
+            query = np.zeros((1, training_params.shape[1]))
+            predicted_coeffs[j] = rbf(query)[0]
+
+        ir = ir_mean + Phi @ predicted_coeffs
+        print(f"ROM: {len(ir)} samples, r={r}")
+        return [ir.tolist()]
 
     def _write_results(self, config, irs, json_file_path):
         """Write impulse responses back to CHORAS JSON."""
