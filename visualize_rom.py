@@ -63,7 +63,7 @@ def plot_rom_dashboard(rom, test_results, save_path='vis/rom_dashboard.png'):
     im1 = ax1.imshow(t30_grid.T, origin='lower', cmap=t30_cmap, aspect='auto',
                      extent=[0.3, 3.0, 0.3, 3.0], interpolation='bilinear')
     cb1 = plt.colorbar(im1, ax=ax1, shrink=0.85, pad=0.02)
-    cb1.set_label('T30 (s)', color='#aaaaaa')
+    cb1.set_label('T30 (s)', color='#cccccc')
     cb1.ax.tick_params(colors='#666666')
 
     # Mark training points
@@ -75,9 +75,9 @@ def plot_rom_dashboard(rom, test_results, save_path='vis/rom_dashboard.png'):
         ax1.plot(r['scales'][0], r['scales'][2], 's', color='#00FF00',
                  markersize=7, markeredgecolor='white', markeredgewidth=0.5)
 
-    ax1.set_xlabel('Floor absorption scale', color='#aaaaaa')
-    ax1.set_ylabel('Wall absorption scale', color='#aaaaaa')
-    ax1.set_title('T30 Parameter Space', color='#00CCFF', fontsize=13,
+    ax1.set_xlabel('Floor absorption scale', color='#cccccc')
+    ax1.set_ylabel('Wall absorption scale', color='#cccccc')
+    ax1.set_title('T30 Parameter Space', color='white', fontsize=13,
                   fontweight='bold')
     ax1.tick_params(colors='#666666')
 
@@ -95,9 +95,9 @@ def plot_rom_dashboard(rom, test_results, save_path='vis/rom_dashboard.png'):
         ax2.plot(t_r[:n], r['ir_rom'][:n], color=colors_test[i],
                  alpha=0.3, linewidth=1.5, linestyle='--')
 
-    ax2.set_xlabel('Time (ms)', color='#aaaaaa')
-    ax2.set_ylabel('Pressure', color='#aaaaaa')
-    ax2.set_title('ROM vs FDTD (solid=FDTD, dashed=ROM)', color='#00CCFF',
+    ax2.set_xlabel('Time (ms)', color='#cccccc')
+    ax2.set_ylabel('Pressure', color='#cccccc')
+    ax2.set_title('ROM vs FDTD (solid=FDTD, dashed=ROM)', color='white',
                   fontsize=13, fontweight='bold')
     ax2.tick_params(colors='#666666')
     ax2.set_xlim(0, 100)
@@ -108,15 +108,15 @@ def plot_rom_dashboard(rom, test_results, save_path='vis/rom_dashboard.png'):
     im3 = ax3.imshow(unc_grid.T, origin='lower', cmap=unc_cmap, aspect='auto',
                      extent=[0.3, 3.0, 0.3, 3.0], interpolation='bilinear')
     cb3 = plt.colorbar(im3, ax=ax3, shrink=0.85, pad=0.02)
-    cb3.set_label('T30 uncertainty (s)', color='#aaaaaa')
+    cb3.set_label('T30 uncertainty (s)', color='#cccccc')
     cb3.ax.tick_params(colors='#666666')
 
     for p in rom.training_params:
         ax3.plot(p[0], p[2], 'o', color='white', markersize=3, alpha=0.4)
 
-    ax3.set_xlabel('Floor absorption scale', color='#aaaaaa')
-    ax3.set_ylabel('Wall absorption scale', color='#aaaaaa')
-    ax3.set_title('GP Uncertainty (low = confident)', color='#00CCFF',
+    ax3.set_xlabel('Floor absorption scale', color='#cccccc')
+    ax3.set_ylabel('Wall absorption scale', color='#cccccc')
+    ax3.set_title('GP Uncertainty (low = confident)', color='white',
                   fontsize=13, fontweight='bold')
     ax3.tick_params(colors='#666666')
 
@@ -130,7 +130,7 @@ def plot_rom_dashboard(rom, test_results, save_path='vis/rom_dashboard.png'):
     y = 0.92
     for j, h in enumerate(headers):
         x = sum(col_w[:j]) + col_w[j] / 2
-        ax4.text(x, y, h, color='#00CCFF', fontsize=11, fontweight='bold',
+        ax4.text(x, y, h, color='white', fontsize=11, fontweight='bold',
                  ha='center', va='center', transform=ax4.transAxes)
 
     for i, r in enumerate(test_results):
@@ -159,10 +159,10 @@ def plot_rom_dashboard(rom, test_results, save_path='vis/rom_dashboard.png'):
     mean_err = np.mean([r['err'] for r in test_results])
     mean_corr = np.mean([r['corr'] for r in test_results])
     ax4.text(0.5, y, f'Mean error: {mean_err:.1f}%   |   Mean correlation: {mean_corr:.4f}',
-             color='#FF00FF', fontsize=12, fontweight='bold',
+             color='white', fontsize=12, fontweight='bold',
              ha='center', transform=ax4.transAxes)
 
-    ax4.set_title('Unseen Test Points', color='#00CCFF', fontsize=13,
+    ax4.set_title('Unseen Test Points', color='white', fontsize=13,
                   fontweight='bold')
 
     # Main title
