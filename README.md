@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/logo.png" alt="PPFFDTD" width="200"/>
+  <img src="docs/logo.png" alt="PPFFDTD" width="600"/>
 </p>
 
 <h1 align="center">PPFFDTD</h1>
@@ -10,6 +10,13 @@
   Integrates with <a href="https://github.com/choras-org/CHORAS">CHORAS</a> for room acoustics simulation.
   <br/><br/>
   Linked project: <a href="https://github.com/Burhanuddin98/Reduced-Order-Modelling-SL">romacoustics</a> (Laplace-domain ROM for room acoustics)
+  <br/><br/>
+  <a href="https://github.com/Burhanuddin98/PPFFDTD/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"/></a>
+  <img src="https://img.shields.io/badge/python-3.10+-brightgreen.svg" alt="Python 3.10+"/>
+  <img src="https://img.shields.io/badge/FDTD-PFFDTD-ff00ff.svg" alt="PFFDTD"/>
+  <img src="https://img.shields.io/badge/ROM-GP%20%2B%20Smolyak-00ccff.svg" alt="ROM"/>
+  <img src="https://img.shields.io/badge/GPU-CuPy%20CUDA-76b900.svg" alt="GPU"/>
+  <img src="https://img.shields.io/badge/T30%20error-1.0%25-00ff88.svg" alt="T30 error 1.0%"/>
 </p>
 
 ![FDTD Simulation](docs/ppffdtd_3d.gif)
