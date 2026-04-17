@@ -1,8 +1,16 @@
-# PPFFDTD
+<p align="center">
+  <img src="docs/logo.png" alt="PPFFDTD" width="200"/>
+</p>
 
-Python wrapper for [PFFDTD](https://github.com/bsxfun/pffdtd) (Brian Hamilton, MIT) with a non-intrusive reduced order model. Integrates with [CHORAS](https://github.com/choras-org/CHORAS) for room acoustics simulation.
+<h1 align="center">PPFFDTD</h1>
 
-Linked project: [romacoustics](https://github.com/Burhanuddin98/Reduced-Order-Modelling-SL) (Laplace-domain ROM for room acoustics)
+<p align="center">
+  Python wrapper for <a href="https://github.com/bsxfun/pffdtd">PFFDTD</a> (Brian Hamilton, MIT) with a non-intrusive reduced order model.
+  <br/>
+  Integrates with <a href="https://github.com/choras-org/CHORAS">CHORAS</a> for room acoustics simulation.
+  <br/><br/>
+  Linked project: <a href="https://github.com/Burhanuddin98/Reduced-Order-Modelling-SL">romacoustics</a> (Laplace-domain ROM for room acoustics)
+</p>
 
 ![FDTD Simulation](docs/ppffdtd_3d.gif)
 
@@ -161,6 +169,26 @@ ppffdtd/
 ├── visualize_3d.py             3D pressure field visualization
 ├── visualize_rom.py            ROM dashboard generation
 └── run_rom_validation.py       ROM training + unseen-point validation
+```
+
+## Installation
+
+```bash
+git clone --recursive https://github.com/Burhanuddin98/PPFFDTD.git
+cd PPFFDTD
+pip install numpy scipy numba h5py gmsh matplotlib resampy scikit-learn
+```
+
+The `--recursive` flag pulls in PFFDTD as a submodule. If you already cloned without it:
+
+```bash
+git submodule update --init --recursive
+```
+
+Optional for GPU acceleration:
+
+```bash
+pip install cupy-cuda12x
 ```
 
 ## Dependencies
