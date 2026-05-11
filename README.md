@@ -136,14 +136,14 @@ The ROM is trained on a Smolyak grid spanning **scale-factor [0.3, 3.0]³** rela
 
 ```mermaid
 flowchart TB
-    subgraph BOX["Training box: [0.3, 3.0]^3 around baseline"]
+    subgraph BOX["Training box: 0.3 to 3.0 (cubed) around baseline"]
         direction LR
-        T[33 PFFDTD training points<br/>Smolyak L2 + 8 cube corners]
+        T["33 PFFDTD training points<br/>Smolyak L2 + 8 cube corners"]
     end
-    IN[Query inside box<br/>α / α_baseline ∈ [0.3, 3.0]]
-    OUT[Query outside box<br/>α / α_baseline ∉ [0.3, 3.0]]
-    GP_PRED[GP prediction<br/>+ posterior σ]
-    CLIP[Boundary value<br/>scale clipped to 0.3 or 3.0]
+    IN["Query inside box<br/>α / α_baseline between 0.3 and 3.0"]
+    OUT["Query outside box<br/>α / α_baseline outside 0.3 to 3.0"]
+    GP_PRED["GP prediction<br/>+ posterior σ"]
+    CLIP["Boundary value<br/>scale clipped to 0.3 or 3.0"]
 
     IN --> GP_PRED
     OUT --> CLIP
