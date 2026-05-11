@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="docs/logo.png" alt="PPFFDTD" width="600"/>
-</p>
-
 <h1 align="center">PPFFDTD</h1>
 
 <p align="center">
@@ -142,16 +138,66 @@ Three modes:
 2. `use_rom: false, train_rom: true` — full FDTD + train ROM for future use (~19 min)
 3. `use_rom: true` — ROM evaluation (< 1 ms, requires prior training)
 
-## Validation
+## Verification
 
 **Wrapper accuracy**: bit-identical to PFFDTD (verified on BRAS S09 benchmark — max diff = 0, correlation = 1.0).
 
 **ROM accuracy on CHORAS MeasurementRoom** (non-rectangular, 6 surfaces, ~89 m³):
 
-| Validation | Correlation | T30 error |
-|------------|-------------|-----------|
-| Leave-one-out (33 training points) | 0.9997 mean | 2.4% mean |
-| 5 unseen FDTD runs | 0.9998 mean | 1.0% mean |
+| Test | Result |
+|---|---|
+| POD basis size for 99.99% energy | **r = 12** (captures 99.994%) |
+| LOO IR correlation across 33 folds (median) | **0.99980** (min 0.99820) |
+| Unseen-point IR correlation across 10 fresh CPU-FDTD draws (median) | **0.99995** (min 0.99985) |
+| Per-band T30 error on unseen points (median, all bands) | **0.4%** (worst 4.1%) |
+| GP posterior 1σ coverage (theoretical 68.27%) | **69.95%** |
+| Error reduction from Smolyak L1 (15 pts) → L2 (33 pts) | **4–8× lower median T30 error** |
+
+See `docs/ROM_VERIFICATION_SUMMARY.md` for the full write-up and `validation/*.py` for reproducible scripts.
+
+### 1. POD basis convergence
+
+<p align="center">
+  <img src="docs/figures/01_pod_spectrum_dark.png" alt="POD singular spectrum" width="900"/>
+</p>
+
+The 33 training IRs have a rank-33 (after centring rank ≤ 32) snapshot matrix. Singular values decay geometrically over 5 orders of magnitude before flattening at numerical zero. Truncating to **r = 12** captures **99.994 %** of the energy — well above the 99 % threshold typical of POD-ROM in CFD / structural mechanics.
+
+### 2. Leave-one-out cross-validation (33 folds, full POD refit per fold)
+
+<p align="center">
+  <img src="docs/figures/02_loo_cv_dark.png" alt="LOO cross-validation summary" width="900"/>
+</p>
+
+For each training point we hold it out, recompute Φ and the ROM on the remaining 32, predict the held-out parameter, and score. Median IR correlation **0.99980** over 33 folds; per-band T30 median error 0.7 – 2.4 %. Worst-case T30 errors (up to ~57 % at 2 kHz on extreme corner nodes) occur where the GP must extrapolate across the largest gap in the training set — expected boundary behaviour of LOO.
+
+### 3. Unseen-point validation (10 fresh CPU-FDTD draws)
+
+<p align="center">
+  <img src="docs/figures/03_unseen_dark.png" alt="Unseen-point validation" width="900"/>
+</p>
+
+Drew 10 random parameter points uniformly in log-space inside the training box [0.3, 3.0]³, with a minimum log-distance of 0.15 from any Smolyak node. Ran a fresh CPU PFFDTD at each (mean 36 s/run; ~6 min total) and compared with the ROM's prediction. Per-band median T30 error sits at 0.19 – 0.78 % across all five octave bands, with the worst single value at **4.1 %**. The headline number for the talk.
+
+### 4. GP posterior calibration
+
+<p align="center">
+  <img src="docs/figures/04_gp_calibration_dark.png" alt="GP posterior calibration" width="900"/>
+</p>
+
+Standardised residuals z = (c_true − c_pred) / σ̂ over the LOO fits. Empirical coverage at ±1 σ is **69.95 %** vs theoretical **68.27 %** — essentially perfect at the credible-interval level. The 2 σ and 3 σ tails are slightly fatter than Gaussian, a known property of GP-with-WhiteKernel on small training sets near the parameter-box boundary. The reliability diagram (right) shows predicted spread tracking observed RMS error along the y = x calibrated line.
+
+### 5. Smolyak level convergence
+
+<p align="center">
+  <img src="docs/figures/05_smolyak_dark.png" alt="Smolyak level convergence" width="900"/>
+</p>
+
+Trained a second ROM at Smolyak level 1 (15 FDTD runs vs L2's 33) and evaluated at the same 10 unseen points. Doubling the training budget from 15 → 33 points reduces median T30 error by **4 – 8 ×** depending on band — faster-than-linear convergence is the signature of an efficient sparse-grid surrogate.
+
+### Honest reporting
+
+PFFDTD's CuPy GPU engine is **not** bit-equivalent to its CPU engine in the build we tested: fresh CPU FDTD at a training parameter reproduces the stored training IR at correlation 1.000000, but fresh GPU FDTD at the same parameter diverges. The ROM verification in this document was therefore performed entirely on CPU. The GPU path is currently usable for development speedups, not for absolute reproducibility against CPU-trained ROMs. The ROM verification itself is unaffected.
 
 ## Repository structure
 
