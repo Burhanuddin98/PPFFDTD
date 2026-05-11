@@ -115,21 +115,6 @@ Three properties make this *reduced-order modelling* rather than curve-fitting:
 - **Linear, inspectable reconstruction.** Every predicted IR is an affine combination of basis IRs: `IR = ir_mean + Σ c_k φ_k`. The basis itself is data — you can look at each `φ_k` and identify the physical modes it captures.
 - **Calibrated Bayesian uncertainty.** The GP returns posterior mean *and* variance per coefficient. Empirical 1σ coverage 69.95 % vs theoretical 68.27 % on this room (slightly heavier tails at 2–3σ — documented honestly).
 
-## Where PPFFDTD fits in CHORAS
-
-CHORAS supports several simulation methods. PPFFDTD-ROM sits in the *low-frequency wave-based* niche alongside DG, but trades a one-time training cost for sub-second iterative queries — the design-iteration use case.
-
-| Method | Regime | Training | Per-query cost | Uncertainty | Source |
-|---|---|---|---|---|---|
-| **PFFDTD** (full, no ROM) | LF wave, time-domain | none | minutes per material | none | Hamilton 2021 |
-| **PPFFDTD-ROM** | LF wave, time-domain | ~20 min once per room | **< 5 sec end-to-end** | **calibrated GP posterior** | this project |
-| **DG** (edg-acoustics) | LF wave, time-domain | none | minutes per material | none | TUE / Hornikx |
-| **DeepONet** | LF wave (DG-trained) | hours-days | < 1 sec | none | TUE |
-| **DE** (acousticDE) | Energy-based diffusion | none | seconds | none | TUE / Sihar |
-| **pyroomacoustics** | Geometric (ISM + ray) | none | seconds | none | EPFL |
-
-The complementary methods (DE, pyroomacoustics) cover broadband but don't capture wave-physics modes. The wave-based methods (PFFDTD, DG) capture modes but are slow. PPFFDTD-ROM is the bridge: physics of PFFDTD, latency of a geometric tracer.
-
 ## Operating window — when does the ROM apply?
 
 The ROM is trained on a Smolyak grid spanning **scale-factor [0.3, 3.0]³** relative to the user's baseline absorption. Queries inside that box are predicted by the GP; queries outside get **clipped to the boundary** rather than extrapolated.
