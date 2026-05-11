@@ -1,0 +1,52 @@
+# =============================================================================
+# PATCH: backend/app/services/simulation_service.py
+# =============================================================================
+# Three additions to plug PFFDTD into the dispatch + auralization pipeline.
+# Insert each block exactly where indicated, mirroring the existing DG / DE / MyNewMethod cases.
+
+# -----------------------------------------------------------------------------
+# 1. Inside `start_solver_task`, after the MyNewMethod branch (~lines 219-227):
+# -----------------------------------------------------------------------------
+
+if simulation.taskType.value == TaskType.PFFDTD.value:
+    task_statuses.append(create_source_task(TaskType.PFFDTD.value, source["id"]))
+    results_container.append(
+        create_result_source_object(source, simulation.receivers, TaskType.PFFDTD.value)
+    )
+
+# -----------------------------------------------------------------------------
+# 2. Inside `run_solver`, with the other `from simulation_backend.<X> import <x>_method` imports
+#    (the imports live INSIDE the task body, around line 323-325 — not at module top):
+# -----------------------------------------------------------------------------
+
+from simulation_backend.PFFDTDInterface import pffdtd_method
+
+# -----------------------------------------------------------------------------
+# 3. Inside `run_solver`'s solver-dispatch `match taskType` block (~lines 389-405),
+#    after `case TaskType.MyNewMethod`:
+# -----------------------------------------------------------------------------
+
+case TaskType.PFFDTD:
+    pffdtd_method(json_file_path=json_path)
+    logger.info("PFFDTD method")
+
+# -----------------------------------------------------------------------------
+# 4. Inside the auralization match block (~lines 433-445), after `case TaskType.DG`:
+#    Reuse auralization_calculation_DG (PFFDTD's IR shape mirrors DG's raw IR).
+# -----------------------------------------------------------------------------
+
+case TaskType.PFFDTD:
+    imp_tot, fs = auralization_calculation_DG(
+        None,
+        json_path.replace(".json", "_pressure.csv"),
+        json_path.replace(".json", ".wav"),
+    )
+
+# -----------------------------------------------------------------------------
+# 5. Inside the post-hoc auralization service's match block (typically a 4th edit,
+#    around lines 580-595 — wherever `auralization_service.run_auralization` decides
+#    which DG-style or DE-style helper to invoke):
+# -----------------------------------------------------------------------------
+
+case TaskType.PFFDTD.value:
+    _, _ = auralization_calculation_DG(signal_file_name, pressure_file_name, wav_output_file_name)

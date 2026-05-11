@@ -1,0 +1,27 @@
+# --------------------------------------------------------------
+# PATCH: backend/app/types/Task.py
+# --------------------------------------------------------------
+# Add the PFFDTD enum value to the existing TaskType class.
+#
+# BEFORE:
+#
+# class TaskType(Enum):
+#     GeometryCheck = "GeometryCheck"
+#     Mesh = "Mesh"
+#     DE = "DE"
+#     DG = "DG"
+#     MyNewMethod = "MyNewMethod"
+#     BOTH = "BOTH"
+#
+# AFTER:
+#
+# class TaskType(Enum):
+#     GeometryCheck = "GeometryCheck"
+#     Mesh = "Mesh"
+#     DE = "DE"
+#     DG = "DG"
+#     MyNewMethod = "MyNewMethod"
+#     BOTH = "BOTH"
+#     PFFDTD = "PFFDTD"        # <-- NEW LINE
+
+PFFDTD = "PFFDTD"

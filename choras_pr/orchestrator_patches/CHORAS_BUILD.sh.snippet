@@ -1,0 +1,12 @@
+# Append this stanza to CHORAS_BUILD.sh in the orchestrator repo. It builds the
+# pffdtd_method Docker image with the simulation-backend repo as the build
+# context, so common/ and pffdtd_method/ are both visible to the COPY commands
+# in the Dockerfile.
+#
+# Mirrors the existing dg_image and de_image stanzas.
+
+echo "=== Building pffdtd_image ==="
+docker build \
+    -t pffdtd_image:latest \
+    -f backend/simulation-backend/pffdtd_method/Dockerfile \
+    backend/simulation-backend/

@@ -1,0 +1,27 @@
+# Add this service to CHORAS/docker-compose.yml alongside the existing
+# `db_service`, `redis`, `frontend`, and `backend` services.
+#
+# The image is built via the CHORAS_BUILD.sh entry (see CHORAS_BUILD.sh.snippet).
+# Mount a shared cache volume so the trained ROM persists across simulations
+# from the same project/model (subsequent use-ROM queries hit the cache).
+#
+# Add a named volume `pffdtd_cache` to the `volumes:` section at the bottom.
+
+  pffdtd_method:
+    platform: linux/amd64
+    image: pffdtd_image:latest
+    pull_policy: never
+    volumes:
+      - pffdtd_cache:/app/cache
+    environment:
+      - PYTHONUNBUFFERED=1
+    # The container runs on-demand (one invocation per simulation), spawned by
+    # the simulation_service. No `ports:` mapping needed — it talks to the
+    # backend over host.docker.internal:5001.
+
+# At the bottom of docker-compose.yml, alongside the existing
+# `postgresql_data:` volume:
+#
+# volumes:
+#   postgresql_data:
+#   pffdtd_cache:        # <-- ADD

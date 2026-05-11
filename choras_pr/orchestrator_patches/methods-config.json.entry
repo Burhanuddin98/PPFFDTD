@@ -1,0 +1,10 @@
+{
+    "simulationType": "PFFDTD",
+    "containerImage": "pffdtd_image:latest",
+    "envVars": {},
+    "label": "PPFFDTD (PFFDTD + POD-GP ROM)",
+    "settings": "PFFDTD_setting.json",
+    "entryFile": "pffdtd_interface",
+    "repositoryURL": "https://github.com/Burhanuddin98/PPFFDTD",
+    "documentationURL": ""
+}

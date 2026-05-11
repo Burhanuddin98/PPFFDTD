@@ -1,0 +1,115 @@
+[project]
+name = "pffdtd_interface"
+version = "0.1.0"
+description = "PFFDTD with non-intrusive POD+GP reduced-order model for instant material-design iteration."
+requires-python = ">=3.10"
+authors = [
+    { name = "Burhanuddin Sakarwala", email = "bsakarwala98@gmail.com" },
+]
+keywords = [
+
+    "acoustic simulation",
+
+    "FDTD",
+
+    "wave-based",
+
+    "ROM",
+
+    "reduced-order model",
+
+]
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+
+    "Programming Language :: Python :: 3.10",
+
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+
+    "Programming Language :: Python :: 3.14",
+
+]
+dependencies = [
+
+    "numpy>=1.23",
+
+    "scipy>=1.10",
+
+    "numba>=0.57",
+    # numba 0.65+ imports coverage.types.Tracer at module load. pre-7.4 coverage
+    # builds (e.g. 7.2.7) don't expose that attribute and the import fails. Pin
+    # coverage to a recent version that includes it.
+    "coverage>=7.6",
+
+    "h5py>=3.7",
+
+    "gmsh>=4.10",
+
+    "matplotlib>=3.5",
+
+    "resampy>=0.3",
+
+    "scikit-learn>=1.2",
+
+    "psutil>=5.8",
+
+    "memory_profiler>=0.58",
+
+    "tqdm>=4.62",
+
+    "requests",
+    "gmsh",
+    # PFFDTD wave solver (Brian Hamilton, MIT). Pinned to a known-good SHA.
+    # Replace with PyPI-installable form once Hamilton ships pyproject.toml.
+    "pffdtd @ git+https://github.com/bsxfun/pffdtd.git@f79192d",
+    # Our ROM package providing NonIntrusiveROM (Smolyak + POD + GP).
+    "ppffdtd @ git+https://github.com/Burhanuddin98/PPFFDTD.git@main",
+]
+
+[project.optional-dependencies]
+deploy = [
+    "twine",
+    "wheel",
+    "build",
+    "setuptools",
+    "bump-my-version",
+]
+
+tests = [
+    "pytest",
+    "pytest-cov",
+    "watchdog",
+    "ruff",
+    "coverage",
+]
+
+docs = [
+    "sphinx",
+    "autodocsumm>=0.2.14",
+    "pydata-sphinx-theme",
+    "sphinx_mdinclude",
+    "sphinx-design",
+    "sphinx-favicon",
+    "sphinx-reredirects",
+]
+
+dev = ["pffdtd_interface[deploy,tests,docs]"]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["pffdtd_interface"]
+
+[project.scripts]
+pffdtd_interface = "pffdtd_interface:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
