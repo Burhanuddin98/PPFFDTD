@@ -1,0 +1,46 @@
+{
+    "absorption_coefficients": {
+        "floor":   "0.6, 0.69, 0.71, 0.7, 0.63",
+        "wall1":   "0.6, 0.69, 0.71, 0.7, 0.63",
+        "ceiling": "0.6, 0.69, 0.71, 0.7, 0.63",
+        "wall2":   "0.6, 0.69, 0.71, 0.7, 0.63",
+        "wall3":   "0.6, 0.69, 0.71, 0.7, 0.63",
+        "wall4":   "0.6, 0.69, 0.71, 0.7, 0.63"
+    },
+    "msh_path": "MeasurementRoom.msh",
+    "geo_path": "MeasurementRoom.geo",
+    "simulationSettings": {
+        "pffdtd_c0":          343.0,
+        "pffdtd_fmax":        1000.0,
+        "pffdtd_ppw":         6,
+        "pffdtd_ir_length":   1.0,
+        "pffdtd_temperature": 20.0,
+        "pffdtd_humidity":    50.0,
+        "pffdtd_use_gpu":     true,
+        "pffdtd_use_rom":     false,
+        "pffdtd_train_rom":   false
+    },
+    "results": [
+        {
+            "percentage": 0,
+            "sourceX": 2,
+            "sourceY": 2,
+            "sourceZ": 1.5,
+            "resultType": "PFFDTD",
+            "frequencies": [125, 250, 500, 1000, 2000],
+            "responses": [
+                {
+                    "x": 1, "y": 1, "z": 1.5,
+                    "parameters": {
+                        "edt": [], "t20": [], "t30": [],
+                        "c80": [], "d50": [], "ts": [],
+                        "spl_t0_freq": []
+                    },
+                    "receiverResults": [],
+                    "receiverResultsUncorrected": []
+                }
+            ]
+        }
+    ],
+    "settingsPreset": "Default"
+}

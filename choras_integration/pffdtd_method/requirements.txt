@@ -1,0 +1,16 @@
+numpy>=1.23,<2
+scipy>=1.10
+numba>=0.57
+h5py>=3.7
+gmsh>=4.10
+matplotlib>=3.5
+resampy>=0.3
+scikit-learn>=1.2
+requests>=2.28
+
+# PFFDTD (Brian Hamilton, MIT) pinned to the SHA currently used as a submodule
+git+https://github.com/bsxfun/pffdtd.git@f79192d#egg=pffdtd
+
+# PPFFDTD (our wrapper + ROM). When the simulation-backend repo is built, the backend's
+# top-level pip-install pulls this so `from ppffdtd.rom import NonIntrusiveROM` resolves.
+git+https://github.com/Burhanuddin98/PPFFDTD.git@main#egg=ppffdtd

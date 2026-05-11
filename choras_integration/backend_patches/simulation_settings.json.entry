@@ -1,0 +1,8 @@
+{
+    "description": "PPFFDTD: a non-intrusive POD+GP reduced-order model wrapper around Brian Hamilton's PFFDTD finite-difference time-domain solver. Train once (~19 min) on a Smolyak grid; subsequent material changes evaluate in <5 sec.",
+    "label": "PPFFDTD (PFFDTD + POD-GP ROM)",
+    "name": "PFFDTD_setting.json",
+    "simulationType": "PFFDTD",
+    "repositoryURL": "https://github.com/Burhanuddin98/PPFFDTD",
+    "documentationURL": ""
+}
