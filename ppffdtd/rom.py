@@ -538,6 +538,12 @@ class NonIntrusiveROM:
     # ---- Save / Load ----
 
     def save(self, path):
+        """Save the trained ROM to .npz. Also pickle the fitted GP models alongside
+        as a sidecar (<path>.gps.pkl), so future load() calls can skip the expensive
+        hyperparameter optimisation and just unpickle the ready-to-use estimators.
+        Saves ~55 s per load on the MeasurementRoom (r=19, n_train=33)."""
+        import pickle
+
         np.savez_compressed(str(path),
                             ir_mean=self.ir_mean, Phi=self.Phi,
                             training_params=self.training_params,
@@ -548,9 +554,28 @@ class NonIntrusiveROM:
                             fmax_grid=self.fmax_grid, Nt=self.Nt,
                             Nmat=self.Nmat, dim=self.dim,
                             ir_len=self.ir_len)
-        print(f"ROM saved: {path}")
+
+        # Pickle the fitted GP estimators next to the .npz. We keep this in a
+        # separate file (rather than np.savez allow_pickle=True) so the loader
+        # can fall back cleanly if the sidecar is absent or corrupt.
+        gps_path = str(path) + ".gps.pkl"
+        try:
+            with open(gps_path, "wb") as f:
+                pickle.dump({
+                    "gp_models":      getattr(self, "gp_models", None),
+                    "metric_gps":     getattr(self, "metric_gps", None),
+                    "metric_names":   getattr(self, "metric_names", None),
+                }, f)
+            print(f"ROM saved: {path}")
+            print(f"GP sidecar saved: {gps_path}")
+        except Exception as e:
+            print(f"ROM saved: {path} (GP sidecar not written: {e})")
 
     def load(self, path):
+        """Load the trained ROM from .npz. If a <path>.gps.pkl sidecar exists,
+        unpickle the fitted GP estimators directly; otherwise re-fit them
+        (slow path — ~55 s on the MeasurementRoom ROM)."""
+        import pickle
         d = np.load(str(path), allow_pickle=True)
         self.ir_mean = d['ir_mean']
         self.Phi = d['Phi']
@@ -569,6 +594,27 @@ class NonIntrusiveROM:
         self.r = self.Phi.shape[1]
         self.n_train = self.training_params.shape[0]
 
-        self._build_gp()
-        self._build_metric_rom()
+        gps_path = str(path) + ".gps.pkl"
+        gps_loaded = False
+        try:
+            import os as _os
+            if _os.path.exists(gps_path):
+                with open(gps_path, "rb") as f:
+                    cached = pickle.load(f)
+                if cached.get("gp_models") is not None:
+                    self.gp_models = cached["gp_models"]
+                    if cached.get("metric_gps") is not None:
+                        self.metric_gps = cached["metric_gps"]
+                    if cached.get("metric_names") is not None:
+                        self.metric_names = cached["metric_names"]
+                    gps_loaded = True
+                    print(f"  GP: {len(self.gp_models)} models loaded from sidecar (no re-fit)")
+        except Exception as e:
+            print(f"  GP sidecar unreadable ({e}); falling back to re-fit")
+            gps_loaded = False
+
+        if not gps_loaded:
+            self._build_gp()
+            self._build_metric_rom()
+
         print(f"ROM loaded: r={self.r}, {self.n_train} training cases")
